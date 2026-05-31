@@ -1,0 +1,93 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*.*.*']
+  pull_request:
+    branches: [main]
+
+jobs:
+  build-and-test:
+    name: Build & Unit Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET 9
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '9.0.x'
+
+      - name: Restore
+        run: dotnet restore IV.RagToolkit.sln
+
+      - name: Build
+        run: dotnet build IV.RagToolkit.sln --no-restore --configuration Release
+
+      - name: Unit tests
+        run: dotnet test tests/unit/ --no-build --configuration Release
+
+  integration-test:
+    name: Integration Test
+    needs: build-and-test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET 9
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '9.0.x'
+
+      - name: Restore
+        run: dotnet restore IV.RagToolkit.sln
+
+      - name: Build
+        run: dotnet build IV.RagToolkit.sln --no-restore --configuration Release
+
+      - name: Integration tests
+        run: dotnet test tests/integration/ --no-build --configuration Release
+
+  publish:
+    name: Pack & Publish
+    needs: [build-and-test, integration-test]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET 9
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '9.0.x'
+
+      - name: Set version from tag
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          echo "PACKAGE_VERSION=$VERSION" >> $GITHUB_ENV
+
+      - name: Restore
+        run: dotnet restore IV.RagToolkit.sln
+
+      - name: Build
+        run: dotnet build IV.RagToolkit.sln --no-restore --configuration Release -p:Version=${{ env.PACKAGE_VERSION }}
+
+      - name: Pack
+        run: |
+          for project in \
+            src/IV.RagToolkit.Abstractions \
+            src/IV.RagToolkit.Core \
+            src/IV.RagToolkit.Ollama \
+            src/IV.RagToolkit.Postgres; do
+            dotnet pack "$project" --no-build --configuration Release \
+              -p:Version=${{ env.PACKAGE_VERSION }} \
+              --output ./nupkgs
+          done
+
+      - name: Push to NuGet.org
+        run: |
+          dotnet nuget push ./nupkgs/*.nupkg \
+            --api-key ${{ secrets.NUGET_API_KEY }} \
+            --source https://api.nuget.org/v3/index.json \
+            --skip-duplicate
