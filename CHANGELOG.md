@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-05-31
+
+### Added
+
+- `IChunker<TDocument>` typed interface in `Abstractions` — each chunker declares the exact document type it handles, enabling compile-time safety.
+- `ChunkerDispatcher` — implements `IChunker` (pipeline-facing), routes each `Document` to the `IChunker<T>` registered for that runtime type. Walks the inheritance chain, so a subclass of a known document type is handled automatically.
+- `PlainTextDocument` (`Core`) — concrete document for plain text (`required string Text`).
+- `SentenceChunker` (`Core`) — accumulates sentences into chunks up to `MaxChunkSize` characters. Paragraph breaks (`\n\n`) are hard boundaries; a single sentence that exceeds `MaxChunkSize` is yielded as-is.
+- `SentenceChunkerOptions` — `MaxChunkSize` (default 512), `MinChunkLength` (default 0).
+- `FixedSizeChunkerOptions.RespectWordBoundaries` (default `true`) — ends each chunk at the last whitespace before the size limit to avoid mid-word cuts.
+- `FixedSizeChunkerOptions.MinChunkLength` (default 0) — drops chunks shorter than this value before yielding (e.g. a short trailing fragment).
+- `AddPlainTextChunker()` DI extension — registers `FixedSizeChunker` for `PlainTextDocument` with startup-time options validation.
+- `AddSentenceChunker()` DI extension — registers `SentenceChunker` for `PlainTextDocument` with startup-time options validation.
+- `AddChunker<TDocument, TChunker>()` and `AddChunker<TDocument, TChunker, TOptions>()` DI extensions — for custom document types and chunkers.
+- `ChunkerDispatcherTests` (unit) — routing, inheritance-chain walk, unregistered-type error.
+- `SentenceChunkerTests` (unit) — sentence accumulation, paragraph hard boundaries, oversized single sentence, `MinChunkLength` filtering, metadata propagation.
+- `IngestAndQuery_ViaDI_DispatcherRoutesPlainTextDocument` (integration) — full pipeline wired through DI including the dispatcher.
+
+### Changed
+
+- **Breaking:** `Document.Source` is now `required Origin Source { get; init; }` (non-abstract). Subclasses set it via a `[SetsRequiredMembers]` constructor or object initializer; the `override` is no longer required.
+- **Breaking:** `Document` no longer declares `Text`. Content properties live on each concrete document type (`PlainTextDocument.Text`, etc.).
+- **Breaking:** `AddFixedSizeChunker()` removed — replaced by `AddPlainTextChunker()`.
+- **Breaking:** `AddRagToolkit()` now also registers `ChunkerDispatcher` as `IChunker`. Passing a typed chunker directly to `RagPipeline` still works for test/manual wiring.
+- `FixedSizeChunker` now implements `IChunker<PlainTextDocument>` instead of `IChunker`.
+- `FixedSizeChunkerOptions` properties changed from `init` to `set` to support the `Microsoft.Extensions.Options` configuration pattern.
+- Options validation moved to startup (`ValidateOnStart()`) with `[Range]` attributes on options classes.
+- `RagPipeline` log message changed from character count to document type name (since `Document` no longer exposes `Text`).
+
 ## [0.2.0] - 2026-05-31
 
 ### Added

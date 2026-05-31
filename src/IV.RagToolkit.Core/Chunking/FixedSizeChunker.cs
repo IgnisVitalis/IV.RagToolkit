@@ -4,9 +4,9 @@ using Microsoft.Extensions.Options;
 namespace IV.RagToolkit;
 
 /// <summary>
-/// Splits a <see cref="Document"/> into fixed-size character chunks with optional overlap.
+/// Splits a <see cref="PlainTextDocument"/> into fixed-size character chunks with optional overlap.
 /// </summary>
-public sealed class FixedSizeChunker : IChunker
+public sealed class FixedSizeChunker : IChunker<PlainTextDocument>
 {
     private readonly FixedSizeChunkerOptions _options;
 
@@ -19,10 +19,10 @@ public sealed class FixedSizeChunker : IChunker
         _options = value;
     }
 
-#pragma warning disable CS1998 // synchronous chunker implementing async interface
+#pragma warning disable CS1998
     /// <inheritdoc/>
     public async IAsyncEnumerable<Chunk> ChunkAsync(
-        Document document,
+        PlainTextDocument document,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
         var text = document.Text;
@@ -35,12 +35,17 @@ public sealed class FixedSizeChunker : IChunker
             cancellationToken.ThrowIfCancellationRequested();
 
             var length = Math.Min(chunkSize, text.Length - position);
-            yield return new Chunk
+
+            if (_options.RespectWordBoundaries && position + length < text.Length)
             {
-                Text = text.Substring(position, length),
-                Metadata = document.Metadata,
-                Origin = document.Source
-            };
+                var lastSpace = text.LastIndexOf(' ', position + length - 1, length);
+                if (lastSpace > position)
+                    length = lastSpace - position;
+            }
+
+            var chunkText = text.Substring(position, length);
+            if (chunkText.Length >= _options.MinChunkLength)
+                yield return new Chunk { Text = chunkText, Metadata = document.Metadata, Origin = document.Source };
 
             position += step;
         }

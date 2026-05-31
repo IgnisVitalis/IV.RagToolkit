@@ -33,7 +33,7 @@ public sealed class RagPipeline : IRagPipeline
     /// <inheritdoc/>
     public async Task IngestAsync(Document document, CancellationToken cancellationToken = default)
     {
-        _logger.LogDebug("Ingesting document ({Length} chars).", document.Text.Length);
+        _logger.LogDebug("Ingesting document of type {DocumentType}.", document.GetType().Name);
 
         var chunks = new List<Chunk>();
         var chunkIndex = 0;

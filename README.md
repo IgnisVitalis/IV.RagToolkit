@@ -9,7 +9,7 @@ A composable .NET 9 toolkit for building RAG (Retrieval-Augmented Generation) pi
 | Package | Description |
 |---|---|
 | `IV.RagToolkit.Abstractions` | Core interfaces and models. No dependencies. Domain projects depend only on this. |
-| `IV.RagToolkit.Core` | Pipeline orchestration and `FixedSizeChunker`. Depends only on Abstractions. |
+| `IV.RagToolkit.Core` | Pipeline orchestration, built-in document types, and chunkers. Depends only on Abstractions. |
 | `IV.RagToolkit.Ollama` | `IEmbedder` backed by the Ollama `/api/embed` endpoint. |
 | `IV.RagToolkit.Postgres` | `IVectorStore` and `IRetriever` backed by PostgreSQL + pgvector. |
 
@@ -19,7 +19,11 @@ A composable .NET 9 toolkit for building RAG (Retrieval-Augmented Generation) pi
 
 ```csharp
 services.AddRagToolkit()
-    .AddFixedSizeChunker(o => o.ChunkSize = 512)
+    .AddPlainTextChunker(o =>
+    {
+        o.ChunkSize = 512;
+        o.Overlap = 50;
+    })
     .AddOllamaEmbedder(o =>
     {
         o.Endpoint = "http://localhost:11434";
@@ -32,34 +36,19 @@ services.AddRagToolkit()
     });
 ```
 
-### 2. Define your document type
+### 2. Ingest and query
 
-Every document type must subclass `Document` and provide a stable `Origin` that uniquely identifies where it came from.
-
-```csharp
-using System.Diagnostics.CodeAnalysis;
-
-public record InvoiceDocument : Document
-{
-    // One Guid per document type — generated once, never changes
-    private static readonly Guid SourceId = new("a34a3c8c-9a31-45f0-b5f7-d83b4ad62d11");
-
-    public override Origin Source { get; }
-
-    [SetsRequiredMembers]
-    public InvoiceDocument(string text, string invoiceId)
-    {
-        Text = text;
-        Source = new Origin(SourceId, "Invoice", invoiceId);
-    }
-}
-```
-
-### 3. Ingest and query
+Using a built-in document type:
 
 ```csharp
+var sourceId = new Guid("a34a3c8c-9a31-45f0-b5f7-d83b4ad62d11"); // stable, never changes
+
 // Ingest
-await pipeline.IngestAsync(new InvoiceDocument(invoiceText, invoiceId: "INV-001"));
+await pipeline.IngestAsync(new PlainTextDocument
+{
+    Source = new Document.Origin(sourceId, "Invoice", "INV-001"),
+    Text = invoiceText
+});
 
 // Query
 var results = await pipeline.QueryAsync("your question");
@@ -68,7 +57,7 @@ foreach (var result in results)
     Console.WriteLine($"[{result.Score:F2}] {result.Chunk.Text}");
 ```
 
-### 4. Replace a document
+### 3. Replace a document
 
 When a document changes, delete its old chunks before re-ingesting:
 
@@ -76,6 +65,73 @@ When a document changes, delete its old chunks before re-ingesting:
 await vectorStore.DeleteByDocumentAsync(doc.Source);
 await pipeline.IngestAsync(updatedDoc);
 ```
+
+## Chunking strategies
+
+### Built-in chunkers
+
+Both chunkers operate on `PlainTextDocument` and are registered for the same document type — choose one per registration.
+
+**`AddPlainTextChunker`** — fixed character-size chunks with overlap:
+
+```csharp
+.AddPlainTextChunker(o =>
+{
+    o.ChunkSize = 512;          // max characters per chunk
+    o.Overlap = 50;             // shared characters between consecutive chunks
+    o.RespectWordBoundaries = true;  // avoid cutting mid-word (default: true)
+    o.MinChunkLength = 20;      // drop trailing fragments shorter than this
+})
+```
+
+**`AddSentenceChunker`** — accumulates sentences up to a character limit; paragraph breaks are always hard boundaries:
+
+```csharp
+.AddSentenceChunker(o =>
+{
+    o.MaxChunkSize = 512;   // max characters per chunk
+    o.MinChunkLength = 20;  // drop short fragments
+})
+```
+
+### Custom document types and chunkers
+
+For document types with structure beyond plain text, subclass `Document` directly and provide your own `IChunker<T>`:
+
+```csharp
+// 1. Define your document type
+public record InvoiceDocument : Document
+{
+    private static readonly Guid SourceId = new("a34a3c8c-9a31-45f0-b5f7-d83b4ad62d11");
+
+    [SetsRequiredMembers]
+    public InvoiceDocument(string text, string invoiceId)
+    {
+        Text = text;
+        Source = new Document.Origin(SourceId, "Invoice", invoiceId);
+    }
+
+    public required string Text { get; init; }
+}
+
+// 2. Implement a chunker
+public class InvoiceChunker : IChunker<InvoiceDocument>
+{
+    public async IAsyncEnumerable<Chunk> ChunkAsync(
+        InvoiceDocument document,
+        CancellationToken cancellationToken = default)
+    {
+        // your chunking logic
+    }
+}
+
+// 3. Register
+services.AddRagToolkit()
+    .AddChunker<InvoiceDocument, InvoiceChunker>()
+    ...
+```
+
+The dispatcher routes each document to its registered chunker automatically. If a document type has no registered chunker, an `InvalidOperationException` is thrown with the type name.
 
 ## Prerequisites
 
@@ -89,13 +145,15 @@ await pipeline.IngestAsync(updatedDoc);
 ### Pipeline flow
 
 ```
-Ingest:  Document → IChunker → IEmbedder → IVectorStore
+Ingest:  Document → IChunker<T> → IEmbedder → IVectorStore
 Query:   string   → IEmbedder → IRetriever → IReadOnlyList<SearchResult>
 ```
 
+The `ChunkerDispatcher` (registered automatically by `AddRagToolkit`) routes each `Document` instance to the `IChunker<T>` registered for that document type, walking the inheritance chain if no exact match exists.
+
 ### Document identity
 
-Every `Document` subclass carries a `Source` property of type `Document.Origin`:
+Every `Document` carries a `Source` property of type `Document.Origin`:
 
 ```csharp
 public sealed record Origin(Guid SourceId, string DocumentType, string DocumentId)
@@ -117,7 +175,7 @@ The pipeline automatically enriches each chunk before storage:
 |---|---|---|
 | `Chunk.Id` | `RagPipeline` | Random `Guid` |
 | `Chunk.Embedding` | `RagPipeline` | Output of `IEmbedder` |
-| `Chunk.Origin` | `IChunker` | Copied from `Document.Source` |
+| `Chunk.Origin` | `IChunker<T>` | Copied from `Document.Source` |
 | `Chunk.ChunkIndex` | `RagPipeline` | Zero-based position within the document |
 
 ### Similarity score

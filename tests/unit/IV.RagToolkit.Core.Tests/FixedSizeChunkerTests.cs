@@ -5,8 +5,18 @@ namespace IV.RagToolkit.Tests;
 
 public class FixedSizeChunkerTests
 {
-    private static FixedSizeChunker Create(int chunkSize = 10, int overlap = 0) =>
-        new(Options.Create(new FixedSizeChunkerOptions { ChunkSize = chunkSize, Overlap = overlap }));
+    private static FixedSizeChunker Create(
+        int chunkSize = 10,
+        int overlap = 0,
+        bool respectWordBoundaries = false,
+        int minChunkLength = 0) =>
+        new(Options.Create(new FixedSizeChunkerOptions
+        {
+            ChunkSize = chunkSize,
+            Overlap = overlap,
+            RespectWordBoundaries = respectWordBoundaries,
+            MinChunkLength = minChunkLength
+        }));
 
     [Fact]
     public async Task ChunkAsync_TextShorterThanChunkSize_ReturnsSingleChunk()
@@ -113,5 +123,40 @@ public class FixedSizeChunkerTests
         var act = () => Create(chunkSize: 5, overlap: 6);
 
         act.Should().Throw<InvalidOperationException>();
+    }
+
+    [Fact]
+    public async Task ChunkAsync_RespectWordBoundaries_ChunksDoNotEndMidWord()
+    {
+        var chunker = Create(chunkSize: 10, overlap: 0, respectWordBoundaries: true);
+        // "Hello world" — without word boundary: "Hello worl", "d"
+        // with word boundary: "Hello" (cuts at last space before pos 10)
+        var chunks = await chunker.ChunkAsync(new TestDocument("Hello world")).ToListAsync();
+
+        chunks.Should().NotContain(c => c.Text.EndsWith(' '));
+        chunks[0].Text.Should().Be("Hello");
+    }
+
+    [Fact]
+    public async Task ChunkAsync_RespectWordBoundariesFalse_CutsAtExactCharacterPosition()
+    {
+        var chunker = Create(chunkSize: 7, overlap: 0, respectWordBoundaries: false);
+
+        var chunks = await chunker.ChunkAsync(new TestDocument("Hello world")).ToListAsync();
+
+        chunks[0].Text.Should().Be("Hello w");
+        chunks[1].Text.Should().Be("orld");
+    }
+
+    [Fact]
+    public async Task ChunkAsync_MinChunkLength_FiltersChunksBelowThreshold()
+    {
+        // chunkSize 8, overlap 0 → "12345678", "9" — the last chunk is 1 char
+        var chunker = Create(chunkSize: 8, overlap: 0, minChunkLength: 3);
+
+        var chunks = await chunker.ChunkAsync(new TestDocument("123456789")).ToListAsync();
+
+        chunks.Should().HaveCount(1);
+        chunks[0].Text.Should().Be("12345678");
     }
 }

@@ -1,6 +1,8 @@
 using FluentAssertions;
 using IV.RagToolkit.IntegrationTests.Fixtures;
 using IV.RagToolkit.IntegrationTests.Helpers;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 
@@ -32,7 +34,7 @@ public sealed class RagPipelineIntegrationTests : IClassFixture<PostgresContaine
         });
         var chunkerOptions = Options.Create(new FixedSizeChunkerOptions { ChunkSize = 512 });
 
-        var chunker = new FixedSizeChunker(chunkerOptions);
+        var chunker = new PlainTextChunkerBridge(new FixedSizeChunker(chunkerOptions));
         var vectorStore = new PostgresVectorStore(_fixture.DataSource, postgresOptions);
         var retriever = new PostgresRetriever(_fixture.DataSource, postgresOptions);
 
@@ -121,5 +123,54 @@ public sealed class RagPipelineIntegrationTests : IClassFixture<PostgresContaine
 
         results[0].Chunk.Origin.Should().Be(doc.Source);
         results[0].Chunk.ChunkIndex.Should().Be(0);
+    }
+
+    private IRagPipeline CreateDiPipeline(string tableName, IEmbedder embedder)
+    {
+        var postgresOptions = Options.Create(new PostgresOptions
+        {
+            ConnectionString = _fixture.ConnectionString,
+            TableName = tableName,
+            VectorDimension = 3
+        });
+
+        var services = new ServiceCollection();
+        services.AddSingleton<ILogger<RagPipeline>>(NullLogger<RagPipeline>.Instance);
+        services.AddSingleton(embedder);
+        services.AddSingleton<IVectorStore>(_ => new PostgresVectorStore(_fixture.DataSource, postgresOptions));
+        services.AddSingleton<IRetriever>(_ => new PostgresRetriever(_fixture.DataSource, postgresOptions));
+        services.AddRagToolkit().AddPlainTextChunker();
+        return services.BuildServiceProvider().GetRequiredService<IRagPipeline>();
+    }
+
+    [Fact]
+    public async Task IngestAndQuery_ViaDI_DispatcherRoutesPlainTextDocument()
+    {
+        var embeddings = new Dictionary<string, float[]>
+        {
+            ["cats are animals"] = [1f, 0f, 0f],
+            ["what are cats?"]   = [1f, 0f, 0f]
+        };
+        var pipeline = CreateDiPipeline(PostgresContainerFixture.NewTable(), FakeEmbedder.FromDictionary(embeddings));
+        var doc = new PlainTextDocument
+        {
+            Source = new Document.Origin(new Guid("a0000000-0000-0000-0000-000000000001"), "Test", "cats"),
+            Text = "cats are animals"
+        };
+
+        await pipeline.IngestAsync(doc);
+        var results = await pipeline.QueryAsync("what are cats?", new RetrievalOptions { TopK = 1, MinScore = -1f });
+
+        results.Should().HaveCount(1);
+        results[0].Chunk.Text.Should().Be("cats are animals");
+        results[0].Chunk.Origin.DocumentId.Should().Be("cats");
+    }
+
+    private sealed class PlainTextChunkerBridge : IChunker
+    {
+        private readonly IChunker<PlainTextDocument> _inner;
+        public PlainTextChunkerBridge(IChunker<PlainTextDocument> inner) => _inner = inner;
+        public IAsyncEnumerable<Chunk> ChunkAsync(Document doc, CancellationToken ct = default)
+            => _inner.ChunkAsync((PlainTextDocument)doc, ct);
     }
 }

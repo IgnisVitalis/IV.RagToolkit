@@ -4,10 +4,7 @@ namespace IV.RagToolkit;
 public abstract record Document
 {
     /// <summary>Identifies the provenance of this document.</summary>
-    public abstract Origin Source { get; }
-
-    /// <summary>Text content of the document.</summary>
-    public required string Text { get; init; }
+    public required Origin Source { get; init; }
 
     /// <summary>Arbitrary metadata propagated to all chunks produced from this document.</summary>
     public IReadOnlyDictionary<string, object>? Metadata { get; init; }

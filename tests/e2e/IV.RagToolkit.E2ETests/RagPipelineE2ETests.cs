@@ -36,12 +36,20 @@ public sealed class RagPipelineE2ETests : IClassFixture<PostgresContainerFixture
         });
 
         var httpFactory = new SingletonHttpClientFactory(OllamaEndpoint);
-        var chunker = new FixedSizeChunker(Options.Create(new FixedSizeChunkerOptions { ChunkSize = 512 }));
+        var chunker = new PlainTextChunkerBridge(new FixedSizeChunker(Options.Create(new FixedSizeChunkerOptions { ChunkSize = 512 })));
         var embedder = new OllamaEmbedder(httpFactory, ollamaOptions);
         var vectorStore = new PostgresVectorStore(_fixture.DataSource, postgresOptions);
         var retriever = new PostgresRetriever(_fixture.DataSource, postgresOptions);
 
         return new RagPipeline(chunker, embedder, vectorStore, retriever, NullLogger<RagPipeline>.Instance);
+    }
+
+    private sealed class PlainTextChunkerBridge : IChunker
+    {
+        private readonly IChunker<PlainTextDocument> _inner;
+        public PlainTextChunkerBridge(IChunker<PlainTextDocument> inner) => _inner = inner;
+        public IAsyncEnumerable<Chunk> ChunkAsync(Document doc, CancellationToken ct = default)
+            => _inner.ChunkAsync((PlainTextDocument)doc, ct);
     }
 
     [Fact]
