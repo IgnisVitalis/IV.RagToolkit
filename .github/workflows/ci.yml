@@ -50,7 +50,10 @@ jobs:
         run: dotnet build IV.RagToolkit.sln --no-restore --configuration Release
 
       - name: Integration tests
-        run: dotnet test tests/integration/ --no-build --configuration Release
+        run: |
+          find tests/integration -name "*.csproj" | while read proj; do
+            dotnet test "$proj" --no-build --configuration Release
+          done
 
   publish:
     name: Pack & Publish
