@@ -26,7 +26,10 @@ jobs:
         run: dotnet build IV.RagToolkit.sln --no-restore --configuration Release
 
       - name: Unit tests
-        run: dotnet test tests/unit/ --no-build --configuration Release
+        run: |
+          find tests/unit -name "*.csproj" | while read proj; do
+            dotnet test "$proj" --no-build --configuration Release
+          done
 
   integration-test:
     name: Integration Test
@@ -63,15 +66,14 @@ jobs:
           dotnet-version: '9.0.x'
 
       - name: Set version from tag
-        run: |
-          VERSION="${GITHUB_REF_NAME#v}"
-          echo "PACKAGE_VERSION=$VERSION" >> $GITHUB_ENV
+        id: version
+        run: echo "value=${GITHUB_REF_NAME#v}" >> $GITHUB_OUTPUT
 
       - name: Restore
         run: dotnet restore IV.RagToolkit.sln
 
       - name: Build
-        run: dotnet build IV.RagToolkit.sln --no-restore --configuration Release -p:Version=${{ env.PACKAGE_VERSION }}
+        run: dotnet build IV.RagToolkit.sln --no-restore --configuration Release -p:Version=${{ steps.version.outputs.value }}
 
       - name: Pack
         run: |
@@ -81,7 +83,7 @@ jobs:
             src/IV.RagToolkit.Ollama \
             src/IV.RagToolkit.Postgres; do
             dotnet pack "$project" --no-build --configuration Release \
-              -p:Version=${{ env.PACKAGE_VERSION }} \
+              -p:Version=${{ steps.version.outputs.value }} \
               --output ./nupkgs
           done
 
