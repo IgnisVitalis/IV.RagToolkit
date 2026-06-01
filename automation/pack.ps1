@@ -14,16 +14,19 @@ $OutputPath = Join-Path $env:USERPROFILE ".nuget\local-feed"
 if (-not (Test-Path $OutputPath)) { New-Item -ItemType Directory -Path $OutputPath | Out-Null }
 
 $SrcProjects = @(
-    'src/IV.RagToolkit.Abstractions'
-    'src/IV.RagToolkit.Core'
-    'src/IV.RagToolkit.Ollama'
-    'src/IV.RagToolkit.Postgres'
+    'src/IV.RAG.Abstractions'
+    'src/IV.RAG.Core'
+    'src/IV.RAG.Ingestion'
+    'src/IV.RAG.Ollama'
+    'src/IV.RAG.Postgres'
+    'src/IV.RAG.Remote.Http'
 )
 
 function Get-NextVersion {
     param([string]$Folder, [string]$Mode)
 
-    $refPackage = 'IV.RagToolkit.Abstractions'
+    $refPackage = 'IV.RAG.Abstractions'
+
     $rx = [regex]("^" + [regex]::Escape($refPackage) + "\.(\d+)\.(\d+)\.(\d+)\.nupkg$")
     $items = Get-ChildItem $Folder -Filter "$refPackage.*.nupkg" -File -ErrorAction SilentlyContinue |
         Where-Object { $_.Name -notlike "*.symbols.nupkg" } |

@@ -1,0 +1,10 @@
+{
+  "solution": {
+    "path": "IV.RAG.sln",
+    "projects": [
+      "tests\\unit\\IV.RAG.Core.Tests\\IV.RAG.Core.Tests.csproj",
+      "tests\\unit\\IV.RAG.Ollama.Tests\\IV.RAG.Ollama.Tests.csproj",
+      "tests\\unit\\IV.RAG.Postgres.Tests\\IV.RAG.Postgres.Tests.csproj"
+    ]
+  }
+}

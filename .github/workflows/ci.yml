@@ -23,12 +23,13 @@ jobs:
           dotnet-version: '9.0.x'
 
       - name: Restore
-        run: dotnet restore IV.RagToolkit.sln
+        run: dotnet restore IV.RAG.sln
 
       - name: Build
-        run: dotnet build IV.RagToolkit.sln --no-restore --configuration Release
+        run: dotnet build IV.RAG.sln --no-restore --configuration Release
 
       - name: Unit tests
+
         run: |
           find tests/unit -name "*.csproj" | while read proj; do
             dotnet test "$proj" --no-build --configuration Release
@@ -47,10 +48,10 @@ jobs:
           dotnet-version: '9.0.x'
 
       - name: Restore
-        run: dotnet restore IV.RagToolkit.sln
+        run: dotnet restore IV.RAG.sln
 
       - name: Build
-        run: dotnet build IV.RagToolkit.sln --no-restore --configuration Release
+        run: dotnet build IV.RAG.sln --no-restore --configuration Release
 
       - name: Integration tests
         run: |
@@ -76,18 +77,20 @@ jobs:
         run: echo "value=${GITHUB_REF_NAME#v}" >> $GITHUB_OUTPUT
 
       - name: Restore
-        run: dotnet restore IV.RagToolkit.sln
+        run: dotnet restore IV.RAG.sln
 
       - name: Build
-        run: dotnet build IV.RagToolkit.sln --no-restore --configuration Release -p:Version=${{ steps.version.outputs.value }}
+        run: dotnet build IV.RAG.sln --no-restore --configuration Release -p:Version=${{ steps.version.outputs.value }}
 
       - name: Pack
         run: |
           for project in \
-            src/IV.RagToolkit.Abstractions \
-            src/IV.RagToolkit.Core \
-            src/IV.RagToolkit.Ollama \
-            src/IV.RagToolkit.Postgres; do
+            src/IV.RAG.Abstractions \
+            src/IV.RAG.Core \
+            src/IV.RAG.Ingestion \
+            src/IV.RAG.Ollama \
+            src/IV.RAG.Postgres \
+            src/IV.RAG.Remote.Http; do
             dotnet pack "$project" --no-build --configuration Release \
               -p:Version=${{ steps.version.outputs.value }} \
               --output ./nupkgs

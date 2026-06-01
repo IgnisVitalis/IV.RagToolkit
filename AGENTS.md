@@ -4,7 +4,7 @@ Instructions for AI coding agents working in this repository.
 
 ## Development stage
 
-Pre-1.0, active development. Backward compatibility is not required — breaking changes to any layer including `IV.RagToolkit.Abstractions` are acceptable.
+Pre-1.0, active development. Backward compatibility is not required — breaking changes to any layer including `IV.RAG.Abstractions` are acceptable.
 
 ## Tool usage rules
 
@@ -18,7 +18,7 @@ Pre-1.0, active development. Backward compatibility is not required — breaking
 - If a request contains a question, discuss before modifying code
 - Be a constructive skeptic when discussing solutions and ideas
 - Follow existing patterns and conventions in the repo
-- Breaking changes to `IV.RagToolkit.Abstractions` are acceptable — the project is pre-1.0
+- Breaking changes to `IV.RAG.Abstractions` are acceptable — the project is pre-1.0
 - Prefer small, focused changes
 - Do not commit unless asked
 

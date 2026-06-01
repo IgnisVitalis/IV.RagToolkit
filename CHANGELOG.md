@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-06-01
+
+### Added
+
+- `IGenerator` (`Abstractions`) — `GenerateAsync(query, chunks)`: takes a query and retrieved chunks, returns a generated answer string.
+- `IIngestionPipeline` (`Abstractions`) — `IngestAsync`: dedicated interface for the ingestion half of the pipeline.
+- `IRetrievalPipeline` (`Abstractions`) — `QueryAsync`: dedicated interface for the retrieval half of the pipeline.
+- `IAnswerPipeline` (`Abstractions`) — `AnswerAsync`: dedicated interface for the retrieve → generate loop. Designed for client apps that proxy retrieval remotely and generate locally.
+- `RetrievalPipeline` (`Core`) — local implementation of `IIngestionPipeline + IRetrievalPipeline`; owns chunker, embedder, vector store, and retriever.
+- `AnswerPipeline` (`Core`) — client-side implementation of `IAnswerPipeline`; delegates to `IRetrievalPipeline + IGenerator`. Does not handle ingestion.
+- `AddRetrievalPipeline()` DI entry point — registers `RetrievalPipeline` for server-only deployments (no `IGenerator` needed).
+- `AddAnswerPipeline()` DI entry point — registers `AnswerPipeline` for client deployments.
+- **`IV.RAG.Ingestion`** — new package. Chunking infrastructure extracted from `Core`: `PlainTextDocument`, `FixedSizeChunker`, `SentenceChunker`, `ChunkerDispatcher`, and all related DI extensions (`AddPlainTextChunker`, `AddSentenceChunker`, `AddChunker<>`).
+- **`IV.RAG.Remote.Http`** — new package. `RemoteRetrievalPipeline` implements `IRetrievalPipeline` by forwarding queries to a remote server over HTTP. `AddRemoteRetrievalPipeline()` DI extension. `RemoteOptions` — `Endpoint`, `QueryPath`.
+- `OllamaGenerator` (`IV.RAG.Ollama`) — implements `IGenerator` via the Ollama `/api/chat` endpoint.
+- `OllamaOptions.GenerationModel` — model used for generation (default `llama3.2`).
+- `OllamaOptions.SystemPrompt` — configurable system prompt sent before the user message (default instructs the model to answer using only the provided context).
+- `AddOllamaGenerator()` DI extension.
+- `OllamaGeneratorTests` (unit, 6 tests) — response content, endpoint path, model config, system prompt config, chunk inclusion, error handling.
+
+### Changed
+
+- **Breaking:** All namespaces renamed from `IV.RagToolkit` to `IV.RAG`.
+- **Breaking:** `RagToolkitBuilder` renamed to `RAGBuilder`.
+- **Breaking:** `IRagPipeline` is now a marker interface combining `IIngestionPipeline`, `IRetrievalPipeline`, and `IAnswerPipeline`. No members defined directly.
+- **Breaking:** `RagPipeline` constructor signature changed from `(IChunker, IEmbedder, IVectorStore, IRetriever, IGenerator, ILogger<RagPipeline>)` to `(IIngestionPipeline, IRetrievalPipeline, IGenerator, ILogger<RagPipeline>)`. It is now a thin delegator.
+- **Breaking:** `AddRagToolkit()` no longer registers `IChunker`. Call a chunker extension from `IV.RAG.Ingestion` (e.g. `AddSentenceChunker()`) to register `ChunkerDispatcher` and the chosen chunker.
+- **Breaking:** Chunking types (`PlainTextDocument`, `FixedSizeChunker`, `SentenceChunker`, `ChunkerDispatcher`, options classes, DI extensions) moved from `IV.RAG.Core` to the new `IV.RAG.Ingestion` package.
+- `RagPipeline.AnswerAsync` now logs at debug level.
+
 ## [0.3.0] - 2026-05-31
 
 ### Added
@@ -62,9 +92,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `Directory.Build.props` — shared `TargetFramework`, `Nullable`, `TreatWarningsAsErrors`
 - `Directory.Build.targets` — `GenerateDocumentationFile` scoped to src packages only
 - `Directory.Packages.props` — central NuGet version management
-- Solution filters: `IV.RagToolkit.Unit.slnf`, `IV.RagToolkit.Integration.slnf`, `IV.RagToolkit.E2E.slnf`
+- Solution filters: `IV.RAG.Unit.slnf`, `IV.RAG.Integration.slnf`, `IV.RAG.E2E.slnf`
 
-#### IV.RagToolkit.Abstractions
+#### IV.RAG.Abstractions
 - `Document` — raw input (text + metadata)
 - `Chunk` — unit of currency: text, id, embedding, metadata
 - `SearchResult` — chunk with cosine similarity score in `[-1, 1]`
@@ -74,20 +104,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `IVectorStore` — upsert and delete chunks
 - `IRetriever` — cosine similarity search returning `IReadOnlyList<SearchResult>`
 - `IRagPipeline` — `IngestAsync` and `QueryAsync` (public-facing API)
-- `RagToolkitBuilder` — fluent DI registration contract for provider packages
+- `RAGBuilder` — fluent DI registration contract for provider packages
 
-#### IV.RagToolkit.Core
+#### IV.RAG.Core
 - `FixedSizeChunker` — fixed character-size chunking with configurable overlap
 - `FixedSizeChunkerOptions` — `ChunkSize` (default 512), `Overlap` (default 50)
 - `RagPipeline` — orchestrates chunk → embed → store (ingest) and embed → retrieve (query)
 - `AddRagToolkit()` and `AddFixedSizeChunker()` DI extensions
 
-#### IV.RagToolkit.Ollama
+#### IV.RAG.Ollama
 - `OllamaEmbedder` — calls `/api/embed` endpoint, returns `float[]`
 - `OllamaOptions` — `Endpoint` (default `http://localhost:11434`), `EmbeddingModel` (default `nomic-embed-text`)
 - `AddOllamaEmbedder()` DI extension with named `IHttpClientFactory` registration
 
-#### IV.RagToolkit.Postgres
+#### IV.RAG.Postgres
 - `PostgresVectorStore` — upsert (transactional) and delete via pgvector
 - `PostgresRetriever` — cosine similarity search using `<=>` operator; score = `1 - cosine_distance`; filters with `> MinScore`
 - `PostgresOptions` — `ConnectionString`, `TableName` (default `chunks`), `VectorDimension` (default 768)

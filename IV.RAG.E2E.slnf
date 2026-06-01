@@ -1,0 +1,8 @@
+{
+  "solution": {
+    "path": "IV.RAG.sln",
+    "projects": [
+      "tests\\e2e\\IV.RAG.E2ETests\\IV.RAG.E2ETests.csproj"
+    ]
+  }
+}

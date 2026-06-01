@@ -1,4 +1,4 @@
-# IV.RagToolkit
+# IV.RAG
 
 A composable .NET 9 toolkit for building RAG (Retrieval-Augmented Generation) pipelines. Provides infrastructure and base abstractions — every step is swappable via dependency injection without touching pipeline logic.
 
@@ -8,26 +8,27 @@ A composable .NET 9 toolkit for building RAG (Retrieval-Augmented Generation) pi
 
 | Package | Description |
 |---|---|
-| `IV.RagToolkit.Abstractions` | Core interfaces and models. No dependencies. Domain projects depend only on this. |
-| `IV.RagToolkit.Core` | Pipeline orchestration, built-in document types, and chunkers. Depends only on Abstractions. |
-| `IV.RagToolkit.Ollama` | `IEmbedder` backed by the Ollama `/api/embed` endpoint. |
-| `IV.RagToolkit.Postgres` | `IVectorStore` and `IRetriever` backed by PostgreSQL + pgvector. |
+| `IV.RAG.Abstractions` | Core interfaces and models. No dependencies. Domain projects depend only on this. |
+| `IV.RAG.Core` | Pipeline orchestrators (`RagPipeline`, `RetrievalPipeline`, `AnswerPipeline`). Depends only on Abstractions. |
+| `IV.RAG.Ingestion` | Document types and chunkers (`PlainTextDocument`, `FixedSizeChunker`, `SentenceChunker`). |
+| `IV.RAG.Ollama` | `IEmbedder` and `IGenerator` backed by Ollama (`/api/embed`, `/api/chat`). |
+| `IV.RAG.Postgres` | `IVectorStore` and `IRetriever` backed by PostgreSQL + pgvector. |
+| `IV.RAG.Remote.Http` | `IRetrievalPipeline` proxy — forwards queries to a remote retrieval server over HTTP. |
 
-## Quick start
+## Deployment topologies
 
-### 1. Register services
+### Full local pipeline
+
+Everything runs in one process: ingestion, retrieval, and generation.
 
 ```csharp
 services.AddRagToolkit()
-    .AddPlainTextChunker(o =>
+    .AddSentenceChunker(o => o.MaxChunkSize = 512)
+    .AddOllamaEmbedder(o => o.EmbeddingModel = "nomic-embed-text")
+    .AddOllamaGenerator(o =>
     {
-        o.ChunkSize = 512;
-        o.Overlap = 50;
-    })
-    .AddOllamaEmbedder(o =>
-    {
-        o.Endpoint = "http://localhost:11434";
-        o.EmbeddingModel = "nomic-embed-text";
+        o.GenerationModel = "llama3.2";
+        o.SystemPrompt = "Answer using only the provided context.";
     })
     .AddPostgresVectorStore(o =>
     {
@@ -36,9 +37,36 @@ services.AddRagToolkit()
     });
 ```
 
-### 2. Ingest and query
+### Server — retrieval only
 
-Using a built-in document type:
+Exposes a retrieval endpoint; does not generate answers.
+
+```csharp
+services.AddRetrievalPipeline()
+    .AddSentenceChunker()
+    .AddOllamaEmbedder()
+    .AddPostgresVectorStore(o => { ... });
+
+// inject IIngestionPipeline for your ingest endpoint
+// inject IRetrievalPipeline for your query endpoint
+```
+
+### Client — remote retrieval + local generation
+
+Calls a remote server for retrieval, generates answers locally.
+
+```csharp
+services.AddAnswerPipeline()
+    .AddRemoteRetrievalPipeline(o => o.Endpoint = "https://my-server/api")
+    .AddOllamaGenerator(o => o.GenerationModel = "llama3.2");
+
+// inject IAnswerPipeline
+var answer = await answerPipeline.AnswerAsync("What is RAG?");
+```
+
+## Quick start
+
+### Ingest and query
 
 ```csharp
 var sourceId = new Guid("a34a3c8c-9a31-45f0-b5f7-d83b4ad62d11"); // stable, never changes
@@ -50,14 +78,17 @@ await pipeline.IngestAsync(new PlainTextDocument
     Text = invoiceText
 });
 
-// Query
+// Query — returns ranked chunks
 var results = await pipeline.QueryAsync("your question");
-
 foreach (var result in results)
     Console.WriteLine($"[{result.Score:F2}] {result.Chunk.Text}");
+
+// Answer — retrieve + generate in one call
+var answer = await pipeline.AnswerAsync("your question");
+Console.WriteLine(answer);
 ```
 
-### 3. Replace a document
+### Replace a document
 
 When a document changes, delete its old chunks before re-ingesting:
 
@@ -68,19 +99,17 @@ await pipeline.IngestAsync(updatedDoc);
 
 ## Chunking strategies
 
-### Built-in chunkers
-
-Both chunkers operate on `PlainTextDocument` and are registered for the same document type — choose one per registration.
+Both chunkers operate on `PlainTextDocument`. Choose one per registration.
 
 **`AddPlainTextChunker`** — fixed character-size chunks with overlap:
 
 ```csharp
 .AddPlainTextChunker(o =>
 {
-    o.ChunkSize = 512;          // max characters per chunk
-    o.Overlap = 50;             // shared characters between consecutive chunks
+    o.ChunkSize = 512;               // max characters per chunk
+    o.Overlap = 50;                  // shared characters between consecutive chunks
     o.RespectWordBoundaries = true;  // avoid cutting mid-word (default: true)
-    o.MinChunkLength = 20;      // drop trailing fragments shorter than this
+    o.MinChunkLength = 20;           // drop trailing fragments shorter than this
 })
 ```
 
@@ -95,8 +124,6 @@ Both chunkers operate on `PlainTextDocument` and are registered for the same doc
 ```
 
 ### Custom document types and chunkers
-
-For document types with structure beyond plain text, subclass `Document` directly and provide your own `IChunker<T>`:
 
 ```csharp
 // 1. Define your document type
@@ -137,19 +164,27 @@ The dispatcher routes each document to its registered chunker automatically. If 
 
 - .NET 9 SDK
 - PostgreSQL with the `vector` extension installed (`CREATE EXTENSION IF NOT EXISTS vector`)
-- Ollama running locally with an embedding model pulled (`ollama pull nomic-embed-text`)
+- Ollama running locally with models pulled (`ollama pull nomic-embed-text`, `ollama pull llama3.2`)
 - Docker (for integration tests)
 
 ## Core concepts
+
+### Pipeline interfaces
+
+| Interface | Methods | Typical consumer |
+|---|---|---|
+| `IIngestionPipeline` | `IngestAsync` | Server ingestion endpoint |
+| `IRetrievalPipeline` | `QueryAsync` | Server query endpoint, remote proxy |
+| `IAnswerPipeline` | `AnswerAsync` | Client app |
+| `IRagPipeline` | all three | Full local deployment |
 
 ### Pipeline flow
 
 ```
 Ingest:  Document → IChunker<T> → IEmbedder → IVectorStore
-Query:   string   → IEmbedder → IRetriever → IReadOnlyList<SearchResult>
+Query:   string   → IEmbedder   → IRetriever → IReadOnlyList<SearchResult>
+Answer:  string   → QueryAsync  → IGenerator → string
 ```
-
-The `ChunkerDispatcher` (registered automatically by `AddRagToolkit`) routes each `Document` instance to the `IChunker<T>` registered for that document type, walking the inheritance chain if no exact match exists.
 
 ### Document identity
 
@@ -173,10 +208,10 @@ The pipeline automatically enriches each chunk before storage:
 
 | Property | Set by | Value |
 |---|---|---|
-| `Chunk.Id` | `RagPipeline` | Random `Guid` |
-| `Chunk.Embedding` | `RagPipeline` | Output of `IEmbedder` |
+| `Chunk.Id` | `RetrievalPipeline` | Random `Guid` |
+| `Chunk.Embedding` | `RetrievalPipeline` | Output of `IEmbedder` |
 | `Chunk.Origin` | `IChunker<T>` | Copied from `Document.Source` |
-| `Chunk.ChunkIndex` | `RagPipeline` | Zero-based position within the document |
+| `Chunk.ChunkIndex` | `RetrievalPipeline` | Zero-based position within the document |
 
 ### Similarity score
 
@@ -189,12 +224,12 @@ The pipeline automatically enriches each chunk before storage:
 
 ### Adding a new provider
 
-Create a new project referencing only `IV.RagToolkit.Abstractions`, implement the relevant interface, and register via a `RagToolkitBuilder` extension:
+Create a new project referencing only `IV.RAG.Abstractions`, implement the relevant interface, and register via a `RAGBuilder` extension:
 
 ```csharp
-// IV.RagToolkit.Qdrant
-public static RagToolkitBuilder AddQdrantVectorStore(
-    this RagToolkitBuilder builder,
+// IV.RAG.Qdrant
+public static RAGBuilder AddQdrantVectorStore(
+    this RAGBuilder builder,
     Action<QdrantOptions> configure) { ... }
 ```
 
@@ -204,37 +239,39 @@ The consumer swaps one line in DI — no other code changes.
 
 ```
 src/
-  IV.RagToolkit.Abstractions/
-  IV.RagToolkit.Core/
-  IV.RagToolkit.Ollama/
-  IV.RagToolkit.Postgres/
+  IV.RAG.Abstractions/     ← interfaces + models
+  IV.RAG.Core/             ← pipeline orchestrators
+  IV.RAG.Ingestion/        ← chunkers + document types
+  IV.RAG.Ollama/           ← embedder + generator
+  IV.RAG.Postgres/         ← vector store + retriever
+  IV.RAG.Remote.Http/      ← remote retrieval proxy
 tests/
-  unit/                          ← no infrastructure required
-  integration/                   ← Docker (Testcontainers)
-  e2e/                           ← live Ollama + Postgres
-automation/                      ← build and publish scripts
+  unit/                    ← no infrastructure required
+  integration/             ← Docker (Testcontainers)
+  e2e/                     ← live Ollama + Postgres
+automation/                ← build and publish scripts
 ```
 
 ## Building
 
 ```bash
-dotnet build IV.RagToolkit.sln
+dotnet build IV.RAG.sln
 ```
 
 ## Testing
 
 ```bash
 # Unit tests — fast, no infrastructure
-dotnet test IV.RagToolkit.Unit.slnf
+dotnet test IV.RAG.Unit.slnf
 
 # Integration tests — requires Docker
-dotnet test IV.RagToolkit.Integration.slnf
+dotnet test IV.RAG.Integration.slnf
 
 # E2E tests — requires Ollama running at http://localhost:11434
-dotnet test IV.RagToolkit.E2E.slnf
+dotnet test IV.RAG.E2E.slnf
 ```
 
-## Extending retrieval options
+## Retrieval options
 
 ```csharp
 var results = await pipeline.QueryAsync(
