@@ -26,13 +26,22 @@ public sealed class PostgresRetriever : IRetriever
     {
         await using var cmd = _dataSource.CreateCommand();
 
+        var filterClause = string.Empty;
+        if (options.MetadataFilter is not null)
+        {
+            var (filterSql, filterParams) = MetadataFilterSqlBuilder.Build(options.MetadataFilter);
+            filterClause = $"\n          AND {filterSql}";
+            foreach (var p in filterParams)
+                cmd.Parameters.Add(p);
+        }
+
         // <=> is cosine distance [0, 2]; converting to cosine similarity [-1, 1]
         // Uses > (not >=) so MinScore = 0.0 excludes orthogonal chunks (score exactly 0)
         cmd.CommandText = $"""
             SELECT id, text, metadata, 1 - (embedding <=> @embedding) AS score,
                    source_id, document_type, document_id, chunk_index
             FROM {_tableName}
-            WHERE 1 - (embedding <=> @embedding) > @minScore
+            WHERE 1 - (embedding <=> @embedding) > @minScore{filterClause}
             ORDER BY embedding <=> @embedding
             LIMIT @topK
             """;
@@ -48,7 +57,7 @@ public sealed class PostgresRetriever : IRetriever
         {
             var metadata = reader.IsDBNull(2)
                 ? null
-                : JsonSerializer.Deserialize<Dictionary<string, object>>(reader.GetString(2)) as IReadOnlyDictionary<string, object>;
+                : JsonSerializer.Deserialize<Metadata>(reader.GetString(2));
 
             var origin = new Document.Origin(
                 reader.GetGuid(4),

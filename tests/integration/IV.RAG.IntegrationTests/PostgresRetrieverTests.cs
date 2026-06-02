@@ -122,4 +122,146 @@ public sealed class PostgresRetrieverTests : IClassFixture<PostgresContainerFixt
 
         results.Should().BeEmpty();
     }
+
+    // ── metadata filter tests ─────────────────────────────────────────────────
+    // Seed: cats → {department=animals, year=2020}
+    //       dogs → {department=animals, year=2021}
+    //       cars → {department=vehicles, year=2019}
+
+    private async Task<PostgresRetriever> CreateAndSeedWithMetadataAsync(string tableName)
+    {
+        var options = Options.Create(new PostgresOptions
+        {
+            ConnectionString = _fixture.ConnectionString,
+            TableName = tableName,
+            VectorDimension = 3
+        });
+        var store = new PostgresRetriever(_fixture.DataSource, options);
+
+        await new PostgresVectorStore(_fixture.DataSource, options).SetAsync(TestOrigin,
+        [
+            new Chunk
+            {
+                Id = "cats", Text = "cats are animals", Embedding = VectorCats, Origin = TestOrigin,
+                Metadata = new Metadata { ["department"] = "animals", ["year"] = 2020 }
+            },
+            new Chunk
+            {
+                Id = "dogs", Text = "dogs are animals", Embedding = VectorDogs, Origin = TestOrigin,
+                Metadata = new Metadata { ["department"] = "animals", ["year"] = 2021 }
+            },
+            new Chunk
+            {
+                Id = "cars", Text = "cars are vehicles", Embedding = VectorCars, Origin = TestOrigin,
+                Metadata = new Metadata { ["department"] = "vehicles", ["year"] = 2019 }
+            }
+        ]);
+
+        return store;
+    }
+
+    [Fact]
+    public async Task RetrieveAsync_EqFilter_ReturnsOnlyMatchingChunks()
+    {
+        var retriever = await CreateAndSeedWithMetadataAsync(PostgresContainerFixture.NewTable());
+
+        var results = await retriever.RetrieveAsync(VectorCats,
+            new RetrievalOptions { TopK = 10, MinScore = -1f, MetadataFilter = MetadataFilter.Eq("department", "animals") });
+
+        results.Should().HaveCount(2);
+        results.Should().OnlyContain(r => r.Chunk.Id == "cats" || r.Chunk.Id == "dogs");
+    }
+
+    [Fact]
+    public async Task RetrieveAsync_GtFilter_ReturnsChunksAboveThreshold()
+    {
+        var retriever = await CreateAndSeedWithMetadataAsync(PostgresContainerFixture.NewTable());
+
+        var results = await retriever.RetrieveAsync(VectorCats,
+            new RetrievalOptions { TopK = 10, MinScore = -1f, MetadataFilter = MetadataFilter.Gt("year", 2020) });
+
+        results.Should().ContainSingle(r => r.Chunk.Id == "dogs");
+    }
+
+    [Fact]
+    public async Task RetrieveAsync_GteFilter_ReturnsChunksAtAndAboveThreshold()
+    {
+        var retriever = await CreateAndSeedWithMetadataAsync(PostgresContainerFixture.NewTable());
+
+        var results = await retriever.RetrieveAsync(VectorCats,
+            new RetrievalOptions { TopK = 10, MinScore = -1f, MetadataFilter = MetadataFilter.Gte("year", 2020) });
+
+        results.Should().HaveCount(2);
+        results.Should().OnlyContain(r => r.Chunk.Id == "cats" || r.Chunk.Id == "dogs");
+    }
+
+    [Fact]
+    public async Task RetrieveAsync_InFilter_ReturnsOnlyMembersOfSet()
+    {
+        var retriever = await CreateAndSeedWithMetadataAsync(PostgresContainerFixture.NewTable());
+
+        var results = await retriever.RetrieveAsync(VectorCats,
+            new RetrievalOptions { TopK = 10, MinScore = -1f, MetadataFilter = MetadataFilter.In("department", "animals", "vehicles") });
+
+        results.Should().HaveCount(3);
+    }
+
+    [Fact]
+    public async Task RetrieveAsync_AndFilter_CombinesTwoConditions()
+    {
+        var retriever = await CreateAndSeedWithMetadataAsync(PostgresContainerFixture.NewTable());
+
+        var results = await retriever.RetrieveAsync(VectorCats,
+            new RetrievalOptions
+            {
+                TopK = 10, MinScore = -1f,
+                MetadataFilter = MetadataFilter.And(
+                    MetadataFilter.Eq("department", "animals"),
+                    MetadataFilter.Gte("year", 2021))
+            });
+
+        results.Should().ContainSingle(r => r.Chunk.Id == "dogs");
+    }
+
+    [Fact]
+    public async Task RetrieveAsync_OrFilter_ReturnsUnionOfMatches()
+    {
+        var retriever = await CreateAndSeedWithMetadataAsync(PostgresContainerFixture.NewTable());
+
+        var results = await retriever.RetrieveAsync(VectorCats,
+            new RetrievalOptions
+            {
+                TopK = 10, MinScore = -1f,
+                MetadataFilter = MetadataFilter.Or(
+                    MetadataFilter.Eq("department", "vehicles"),
+                    MetadataFilter.Gt("year", 2020))
+            });
+
+        results.Should().HaveCount(2);
+        results.Should().OnlyContain(r => r.Chunk.Id == "cars" || r.Chunk.Id == "dogs");
+    }
+
+    [Fact]
+    public async Task RetrieveAsync_NotFilter_ExcludesMatchingChunks()
+    {
+        var retriever = await CreateAndSeedWithMetadataAsync(PostgresContainerFixture.NewTable());
+
+        var results = await retriever.RetrieveAsync(VectorCats,
+            new RetrievalOptions { TopK = 10, MinScore = -1f, MetadataFilter = MetadataFilter.Not(MetadataFilter.Eq("department", "animals")) });
+
+        results.Should().ContainSingle(r => r.Chunk.Id == "cars");
+    }
+
+    [Fact]
+    public async Task RetrieveAsync_MetadataFilter_RoundTripsMetadataValues()
+    {
+        var retriever = await CreateAndSeedWithMetadataAsync(PostgresContainerFixture.NewTable());
+
+        var results = await retriever.RetrieveAsync(VectorCats,
+            new RetrievalOptions { TopK = 1, MinScore = -1f, MetadataFilter = MetadataFilter.Eq("department", "animals") });
+
+        var metadata = results[0].Chunk.Metadata!;
+        metadata["department"].Should().Be(new MetadataFilterValue.Text("animals"));
+        metadata["year"].Should().Be(new MetadataFilterValue.Number(2020));
+    }
 }

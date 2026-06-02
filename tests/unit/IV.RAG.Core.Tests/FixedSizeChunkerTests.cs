@@ -80,7 +80,7 @@ public class FixedSizeChunkerTests
     public async Task ChunkAsync_PropagatesDocumentMetadata()
     {
         var chunker = Create(chunkSize: 100);
-        var metadata = new Dictionary<string, object> { ["source"] = "doc.txt" };
+        var metadata = new Metadata { ["source"] = "doc.txt" };
 
         var chunks = await chunker.ChunkAsync(new TestDocument("text", metadata: metadata)).ToListAsync();
 

@@ -29,7 +29,7 @@ public sealed class RemoteRetrievalPipeline : IRetrievalPipeline
         CancellationToken cancellationToken = default)
     {
         var opts = options ?? new RetrievalOptions();
-        var request = new QueryRequest(query, opts.TopK, opts.MinScore);
+        var request = new QueryRequest(query, opts.TopK, opts.MinScore, opts.MetadataFilter);
 
         var response = await _httpClient.PostAsJsonAsync(_queryPath, request, cancellationToken);
         response.EnsureSuccessStatusCode();
@@ -45,7 +45,7 @@ public sealed class RemoteRetrievalPipeline : IRetrievalPipeline
             Text = dto.Chunk.Text,
             ChunkIndex = dto.Chunk.ChunkIndex,
             Origin = new Document.Origin(dto.Chunk.Origin.SourceId, dto.Chunk.Origin.DocumentType, dto.Chunk.Origin.DocumentId),
-            Metadata = dto.Chunk.Metadata?.ToDictionary(kvp => kvp.Key, kvp => (object)kvp.Value)
+            Metadata = dto.Chunk.Metadata
         },
         Score: dto.Score);
 }

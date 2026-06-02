@@ -17,7 +17,7 @@ public sealed record Chunk
     public float[]? Embedding { get; init; }
 
     /// <summary>Arbitrary metadata propagated from the source <see cref="Document"/>.</summary>
-    public IReadOnlyDictionary<string, object>? Metadata { get; init; }
+    public Metadata? Metadata { get; init; }
 
     /// <summary>Origin of the source document. Propagated automatically during ingestion.</summary>
     public required Document.Origin Origin { get; init; }

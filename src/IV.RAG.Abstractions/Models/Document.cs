@@ -7,7 +7,7 @@ public abstract record Document
     public required Origin Source { get; init; }
 
     /// <summary>Arbitrary metadata propagated to all chunks produced from this document.</summary>
-    public IReadOnlyDictionary<string, object>? Metadata { get; init; }
+    public Metadata? Metadata { get; init; }
 
     /// <summary>
     /// Uniquely identifies a document's provenance: the source system, document type within

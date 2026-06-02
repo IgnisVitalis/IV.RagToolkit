@@ -217,6 +217,7 @@ The pipeline automatically enriches each chunk before storage:
 | `Chunk.Embedding` | `RetrievalPipeline` | Output of `IEmbedder` |
 | `Chunk.Origin` | `IChunker<T>` | Copied from `Document.Source` |
 | `Chunk.ChunkIndex` | `RetrievalPipeline` | Zero-based position within the document |
+| `Chunk.Metadata` | `IChunker<T>` | Propagated from `Document.Metadata` |
 
 ### Similarity score
 
@@ -284,6 +285,73 @@ var results = await pipeline.QueryAsync(
     new RetrievalOptions
     {
         TopK = 10,       // maximum results to return
-        MinScore = 0.7f  // only return highly relevant results
+        MinScore = 0.7f, // only return highly relevant results
+        MetadataFilter = MetadataFilter.Eq("department", "engineering")
     });
 ```
+
+## Metadata
+
+Attach typed key-value metadata to a document — it is propagated automatically to every chunk produced from it and stored alongside the vector.
+
+```csharp
+await pipeline.IngestAsync(new PlainTextDocument
+{
+    Source = new Document.Origin(sourceId, "Report", "RPT-2024"),
+    Text = reportText,
+    Metadata = new Metadata
+    {
+        ["department"] = "engineering",
+        ["year"]       = 2024,
+        ["published"]  = true
+    }
+});
+```
+
+Values are typed as `MetadataFilterValue` with implicit conversions from `string`, `int`, `long`, `float`, `double`, and `bool`.
+
+## Metadata filtering
+
+Filter retrieved chunks by their metadata before `TopK` is applied. Build filter trees with the static factory methods on `MetadataFilter`:
+
+```csharp
+// Equality and comparison
+MetadataFilter.Eq("department", "engineering")
+MetadataFilter.Ne("status", "archived")
+MetadataFilter.Gt("year", 2020)
+MetadataFilter.Gte("year", 2020)
+MetadataFilter.Lt("year", 2024)
+MetadataFilter.Lte("year", 2024)
+
+// Set membership — all values must be the same type
+MetadataFilter.In("department", "engineering", "research")
+
+// Logical combinators
+MetadataFilter.And(
+    MetadataFilter.Eq("department", "engineering"),
+    MetadataFilter.Gte("year", 2022))
+
+MetadataFilter.Or(
+    MetadataFilter.Eq("type", "pdf"),
+    MetadataFilter.Eq("type", "docx"))
+
+MetadataFilter.Not(MetadataFilter.Eq("status", "archived"))
+```
+
+Combinators compose freely:
+
+```csharp
+var results = await pipeline.QueryAsync(
+    "your question",
+    new RetrievalOptions
+    {
+        TopK = 5,
+        MetadataFilter = MetadataFilter.And(
+            MetadataFilter.Eq("department", "engineering"),
+            MetadataFilter.Or(
+                MetadataFilter.Gte("year", 2022),
+                MetadataFilter.Eq("featured", true)))
+    });
+```
+
+Filters are pushed down to the database — the `TopK` limit is applied to the already-filtered result set.

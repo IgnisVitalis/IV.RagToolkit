@@ -10,4 +10,10 @@
     <ProjectReference Include="..\IV.RAG.Abstractions\IV.RAG.Abstractions.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo">
+      <_Parameter1>IV.RAG.Postgres.Tests</_Parameter1>
+    </AssemblyAttribute>
+  </ItemGroup>
+
 </Project>

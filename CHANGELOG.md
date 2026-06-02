@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-06-02
+
+### Added
+
+- `MetadataFilterValue` (`Abstractions`) — discriminated union for metadata scalar values: `Text(string)`, `Number(double)`, `Boolean(bool)`. Implicit conversions from `string`, `int`, `long`, `float`, `double`, and `bool` allow natural construction syntax.
+- `Metadata` (`Abstractions`) — typed key-value class for document and chunk metadata. Implements `IReadOnlyDictionary<string, MetadataFilterValue>` with a settable indexer and `Add` for collection/index-initializer syntax. Provides structural value equality (`Equals`, `GetHashCode`, `==`, `!=`) and transparent JSON serialization.
+- `MetadataFilter` (`Abstractions`) — composable predicate tree for filtering chunks by metadata during retrieval. Node types: `Eq`, `Ne`, `Gt`, `Gte`, `Lt`, `Lte` (field comparisons against a scalar), `In` (set membership), `And`, `Or`, `Not` (logical combinators). Built via static factory methods (`MetadataFilter.Eq(...)`, `MetadataFilter.And(...)`, etc.). Annotated with `[JsonPolymorphic]` so filters survive `Remote.Http` transport without additional configuration.
+- `RetrievalOptions.MetadataFilter` (`Abstractions`) — optional `MetadataFilter` applied during retrieval. Only chunks whose metadata satisfies the filter are returned; applied before `TopK` so the result count reflects the filter.
+- `MetadataFilterSqlBuilder` (`IV.RAG.Postgres`) — translates a `MetadataFilter` tree to a JSONB SQL fragment pushed down into the `PostgresRetriever` query. Field names are validated against `[a-zA-Z_][a-zA-Z0-9_]*` to prevent injection. `In` values must be homogeneous (all `Text`, all `Number`, or all `Boolean`); mixed types throw `ArgumentException`.
+
+### Changed
+
+- **Breaking:** `Document.Metadata` type changed from `IReadOnlyDictionary<string, object>?` to `Metadata?`.
+- **Breaking:** `Chunk.Metadata` type changed from `IReadOnlyDictionary<string, object>?` to `Metadata?`.
+- `PostgresRetriever` applies `RetrievalOptions.MetadataFilter` as an additional `AND` clause in the similarity search query when set.
+- `Remote.Http` `QueryRequest` now includes the `MetadataFilter` field; `ChunkDto.Metadata` uses `Metadata` instead of `IReadOnlyDictionary<string, JsonElement>`.
+
 ## [0.5.0] - 2026-06-01
 
 ### Added

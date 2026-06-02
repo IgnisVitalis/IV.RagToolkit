@@ -96,7 +96,7 @@ public sealed class PostgresVectorStoreTests : IClassFixture<PostgresContainerFi
     {
         var (store, retriever) = Create(PostgresContainerFixture.NewTable());
         var embedding = new float[] { 1f, 0f, 0f };
-        var metadata = new Dictionary<string, object> { ["source"] = "doc.txt", ["page"] = 1 };
+        var metadata = new Metadata { ["source"] = "doc.txt", ["page"] = 1 };
         var chunk = new Chunk { Id = "1", Text = "text", Embedding = embedding, Metadata = metadata, Origin = TestOrigin };
 
         await store.SetAsync(TestOrigin, [chunk]);

@@ -10,7 +10,7 @@ internal sealed record TestDocument : PlainTextDocument
     public TestDocument(
         string text,
         string documentId = "doc-1",
-        IReadOnlyDictionary<string, object>? metadata = null)
+        Metadata? metadata = null)
     {
         Text = text;
         Metadata = metadata;

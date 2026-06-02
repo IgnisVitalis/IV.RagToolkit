@@ -11,4 +11,10 @@ public sealed class RetrievalOptions
     /// Defaults to 0.0 — excludes unrelated and opposite-meaning results.
     /// </summary>
     public float MinScore { get; init; } = 0.0f;
+
+    /// <summary>
+    /// Optional predicate applied to chunk metadata before returning results.
+    /// Only chunks whose metadata satisfies the filter are included.
+    /// </summary>
+    public MetadataFilter? MetadataFilter { get; init; }
 }

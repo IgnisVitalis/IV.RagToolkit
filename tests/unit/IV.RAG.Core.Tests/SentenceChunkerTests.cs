@@ -79,7 +79,7 @@ public class SentenceChunkerTests
     public async Task ChunkAsync_PropagatesOriginAndMetadata()
     {
         var chunker = Create(maxChunkSize: 100);
-        var metadata = new Dictionary<string, object> { ["key"] = "value" };
+        var metadata = new Metadata { ["key"] = "value" };
         var doc = new TestDocument("Hello world.", metadata: metadata);
 
         var chunks = await chunker.ChunkAsync(doc).ToListAsync();
